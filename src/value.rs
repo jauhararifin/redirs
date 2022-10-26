@@ -189,7 +189,27 @@ mod tests {
 
     #[test]
     fn test_deserialization() {
-        let testcases = vec![(":-1\r\n", Value::Number(-1))];
+        let testcases = vec![
+            (
+                "+somesimplestring\r\n",
+                Value::Simple("somesimplestring".into()),
+            ),
+            (
+                "$16\r\nsomesimplestring\r\n",
+                Value::Blob("somesimplestring".into()),
+            ),
+            (":-1\r\n", Value::Number(-1)),
+            (":0\r\n", Value::Number(0)),
+            (":12912\r\n", Value::Number(12912)),
+            (
+                "*3\r\n+loremipsum\r\n$11\r\ndoscolorsit\r\n:123\r\n",
+                Value::Array(vec![
+                    Value::Simple("loremipsum".into()),
+                    Value::Blob("doscolorsit".into()),
+                    Value::Number(123),
+                ]),
+            ),
+        ];
 
         for (input, expected) in testcases {
             let val = input.as_bytes().read_value().unwrap();
