@@ -8,4 +8,7 @@ edition = "2021"
 [libs]
 path = "src/lib.rs"
 
+[[bin]]
+name = "redirust"
+
 [dependencies]

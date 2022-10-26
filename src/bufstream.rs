@@ -29,7 +29,7 @@ where
     }
 }
 
-struct BufStream<W>
+pub struct BufStream<W>
 where
     W: Write,
 {
@@ -40,7 +40,7 @@ impl<S> BufStream<S>
 where
     S: Read + Write,
 {
-    fn new(stream: S) -> Self {
+    pub fn new(stream: S) -> Self {
         Self {
             stream: BufReader::new(InternalBufWriter {
                 writer: BufWriter::new(stream),
