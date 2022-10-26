@@ -1,10 +1,10 @@
 use std::{
     borrow::Borrow,
     io,
-    num::ParseIntError,
     ops::{Deref, DerefMut},
-    string::FromUtf8Error,
 };
+
+use crate::error::Result;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Value {
@@ -39,32 +39,8 @@ impl DerefMut for Bytes {
     }
 }
 
-#[derive(Debug)]
-pub enum Error {
-    Io(io::Error),
-    ParseError,
-}
-
-impl From<io::Error> for Error {
-    fn from(error: io::Error) -> Self {
-        Self::Io(error)
-    }
-}
-
-impl From<FromUtf8Error> for Error {
-    fn from(_: FromUtf8Error) -> Self {
-        Self::ParseError
-    }
-}
-
-impl From<ParseIntError> for Error {
-    fn from(_: ParseIntError) -> Self {
-        Self::ParseError
-    }
-}
-
 pub trait ValueWrite: io::Write {
-    fn write_value(&mut self, value: &Value) -> Result<(), Error> {
+    fn write_value(&mut self, value: &Value) -> Result<()> {
         match value {
             Value::Simple(buff) => {
                 self.write("+".as_bytes())?;
@@ -99,7 +75,7 @@ pub trait ValueWrite: io::Write {
 impl<W: io::Write + ?Sized> ValueWrite for W {}
 
 trait ValueReadExt: io::BufRead {
-    fn read_number(&mut self) -> Result<i64, Error> {
+    fn read_number(&mut self) -> Result<i64> {
         let mut buff = Vec::new();
         self.read_until('\n' as u8, &mut buff)?;
         buff.pop();
@@ -112,7 +88,7 @@ trait ValueReadExt: io::BufRead {
 impl<R: io::BufRead + ?Sized> ValueReadExt for R {}
 
 pub trait ValueRead: io::BufRead {
-    fn read_value(self: &mut Self) -> Result<Value, Error> {
+    fn read_value(self: &mut Self) -> Result<Value> {
         let mut buff: [u8; 1] = [0];
         self.read_exact(&mut buff)?;
 
