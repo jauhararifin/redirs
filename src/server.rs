@@ -1,45 +1,35 @@
+use crate::bufstream::BufStream;
+use crate::config::Config;
+use crate::value::ValueRead;
 use std::io;
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::thread;
 
-use crate::bufstream::BufStream;
-use crate::value::ValueRead;
+pub fn run(config: &Config) -> io::Result<()> {
+    let addr = format!("{}:{}", config.host, config.port);
+    let server = TcpListener::bind(addr)?;
+    for client in server.incoming() {
+        let connection = match client {
+            Ok(conn) => conn,
+            Err(_) => todo!(),
+        };
 
-pub struct Config {
-    pub host: String,
-    pub port: i16,
-}
-
-pub struct Server<'a> {
-    config: &'a Config,
-}
-
-impl<'a> Server<'a> {
-    pub fn new(config: &'a Config) -> Self {
-        Self { config }
+        thread::spawn(move || {
+            handle_connection(connection);
+        });
     }
 
-    pub fn run(&mut self) -> io::Result<()> {
-        let server = TcpListener::bind(format!("{}:{}", self.config.host, self.config.port))?;
-        for client in server.incoming() {
-            let connection = match client {
-                Ok(conn) => conn,
-                Err(_) => todo!(),
-            };
+    Ok(())
+}
 
-            thread::spawn(move || {
-                let mut stream = BufStream::new(connection);
-                loop {
-                    let val = stream.read_value();
-                    let val = match val {
-                        Ok(val) => val,
-                        Err(_) => break,
-                    };
-                    println!("Got value {:?}", val);
-                }
-            });
-        }
-
-        Ok(())
+fn handle_connection(connection: TcpStream) {
+    let mut stream = BufStream::new(connection);
+    loop {
+        let val = stream.read_value();
+        let val = match val {
+            Ok(val) => val,
+            Err(_) => break,
+        };
+        println!("Got value {:?}", val);
     }
 }

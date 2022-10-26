@@ -19,7 +19,7 @@ pub struct Bytes(Vec<u8>);
 
 impl<S> From<&S> for Bytes
 where
-    S: Borrow<str>,
+    S: Borrow<str> + ?Sized,
 {
     fn from(s: &S) -> Self {
         Self(s.borrow().bytes().into_iter().collect())
@@ -73,6 +73,8 @@ pub trait ValueWrite: io::Write {
             }
             Value::Blob(buff) => {
                 self.write("$".as_bytes())?;
+                self.write(format!("{}", buff.len()).as_bytes())?;
+                self.write("\r\n".as_bytes())?;
                 self.write(buff.as_slice())?;
                 self.write("\r\n".as_bytes())?;
             }
@@ -84,6 +86,7 @@ pub trait ValueWrite: io::Write {
             Value::Array(slice) => {
                 self.write("*".as_bytes())?;
                 self.write(format!("{}", slice.len()).as_bytes())?;
+                self.write("\r\n".as_bytes())?;
                 for elem in slice.iter() {
                     self.write_value(elem)?;
                 }
@@ -155,8 +158,32 @@ mod tests {
 
     #[test]
     fn test_serialization() {
-        let mut buffer: Vec<u8> = vec![];
-        let val = Value::Simple(Bytes(vec![1]));
-        buffer.write_value(&val).unwrap();
+        let testcases = vec![
+            (
+                Value::Simple("somesimplestring".into()),
+                "+somesimplestring\r\n",
+            ),
+            (
+                Value::Blob("somesimplestring".into()),
+                "$16\r\nsomesimplestring\r\n",
+            ),
+            (Value::Number(-1), ":-1\r\n"),
+            (Value::Number(0), ":0\r\n"),
+            (Value::Number(12912), ":12912\r\n"),
+            (
+                Value::Array(vec![
+                    Value::Simple("loremipsum".into()),
+                    Value::Blob("doscolorsit".into()),
+                    Value::Number(123),
+                ]),
+                "*3\r\n+loremipsum\r\n$11\r\ndoscolorsit\r\n:123\r\n",
+            ),
+        ];
+
+        for (value, expected) in testcases {
+            let mut buffer: Vec<u8> = vec![];
+            buffer.write_value(&value).unwrap();
+            assert_eq!(expected, String::from_utf8(buffer).unwrap().as_str());
+        }
     }
 }
