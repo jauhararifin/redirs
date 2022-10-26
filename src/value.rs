@@ -186,4 +186,14 @@ mod tests {
             assert_eq!(expected, String::from_utf8(buffer).unwrap().as_str());
         }
     }
+
+    #[test]
+    fn test_deserialization() {
+        let testcases = vec![(":-1\r\n", Value::Number(-1))];
+
+        for (input, expected) in testcases {
+            let val = input.as_bytes().read_value().unwrap();
+            assert_eq!(expected, val);
+        }
+    }
 }
