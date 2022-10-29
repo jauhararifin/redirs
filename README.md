@@ -1,14 +1,14 @@
-# Redirust
+# Redirs
 
 A redis server implementation written in Rust. Currently only supports 3 commands: SELECT, GET and SET.
 
 ## Running
 
 ```bash
-cargo run --bin redirust
+cargo run --bin redirs
 ```
 
-Redirust runs on port 5101
+Redirs runs on port 5101
 
 ## Testing
 

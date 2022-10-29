@@ -1,4 +1,4 @@
-use redirust::{config::Config, server::Server, db::Database};
+use redirs::{config::Config, server::Server, db::Database};
 use std::io;
 use stderrlog::{self, LogLevelNum};
 
