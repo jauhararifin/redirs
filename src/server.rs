@@ -1,45 +1,51 @@
 use crate::bufstream::BufStream;
 use crate::config::Config;
+use crate::db::{Database, Session};
 use crate::error::Error;
-use crate::value::{Value, ValueRead};
+use crate::value::{ValueRead, ValueWrite};
 use log;
 use std::io;
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 
-pub struct Server {
+pub struct Server<'a> {
     addr: String,
+    database: &'a mut Database,
 }
 
-impl Server {
-    pub fn new(config: &Config) -> Self {
+impl<'a> Server<'a> {
+    pub fn new(config: &Config, database: &'a mut Database) -> Self {
         Self {
             addr: format!("{}:{}", config.host, config.port),
+            database,
         }
     }
 
     pub fn run(&self) -> io::Result<()> {
-        log::info!("Starting server at {}", &self.addr);
+        thread::scope(|server_scope| {
+            log::info!("Starting server at {}", &self.addr);
 
-        let server = TcpListener::bind(&self.addr)?;
-        for client in server.incoming() {
-            let connection = match client {
-                Ok(conn) => conn,
-                Err(err) => {
-                    log::error!("Cannot accept connection: {:?}", err);
-                    continue;
-                }
-            };
+            let server = TcpListener::bind(&self.addr)?;
+            for client in server.incoming() {
+                let connection = match client {
+                    Ok(conn) => conn,
+                    Err(err) => {
+                        log::error!("Cannot accept connection: {:?}", err);
+                        continue;
+                    }
+                };
 
-            thread::spawn(move || {
-                Self::handle_connection(connection);
-            });
-        }
+                let session = self.database.create_session();
+                server_scope.spawn(move || {
+                    Self::handle_connection(session, connection);
+                });
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
-    fn handle_connection(connection: TcpStream) {
+    fn handle_connection(mut session: Session, connection: TcpStream) {
         let addr = match connection.local_addr() {
             Ok(addr) => addr.to_string(),
             Err(err) => {
@@ -69,11 +75,19 @@ impl Server {
                 }
             };
 
-            Self::handle_command(val);
-        }
-    }
+            let response = session.handle_request(val);
 
-    fn handle_command(value: Value) {
-        println!("Got command: {:?}", value);
+            match stream.write_value(&response) {
+                Ok(_) => (),
+                Err(err) => {
+                    log::error!(
+                        "Error writing response to client{}: {}. Disconnecting",
+                        addr,
+                        err
+                    );
+                    break;
+                }
+            }
+        }
     }
 }

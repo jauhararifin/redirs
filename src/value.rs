@@ -1,5 +1,6 @@
 use std::{
     borrow::Borrow,
+    fmt::Display,
     io,
     ops::{Deref, DerefMut},
 };
@@ -12,10 +13,31 @@ pub enum Value {
     Blob(Bytes),
     Number(i64),
     Array(Vec<Value>),
+    Err(String, String),
+    Null,
+}
+
+impl Value {
+    pub fn err(message: impl Into<String>) -> Self {
+        Self::Err("ERR".to_string(), message.into())
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // TODO(jauhararifin): write proper implementation for this.
+        write!(f, "{:?}", self)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Bytes(Vec<u8>);
+
+impl Bytes {
+    pub fn into_string(self) -> Result<String> {
+        Ok(String::from_utf8(self.0)?)
+    }
+}
 
 impl<S> From<&S> for Bytes
 where
@@ -67,7 +89,18 @@ pub trait ValueWrite: io::Write {
                     self.write_value(elem)?;
                 }
             }
+            Value::Err(code, msg) => {
+                self.write("-".as_bytes())?;
+                self.write(code.as_bytes())?;
+                self.write(" ".as_bytes())?;
+                self.write(msg.as_bytes())?;
+                self.write("\r\n".as_bytes())?;
+            }
+            Value::Null => {
+                self.write("$-1\r\n".as_bytes())?;
+            }
         }
+        self.flush()?;
         Ok(())
     }
 }

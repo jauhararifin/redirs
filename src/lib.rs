@@ -3,3 +3,4 @@ pub mod config;
 pub mod server;
 pub mod value;
 pub mod error;
+pub mod db;
