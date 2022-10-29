@@ -73,6 +73,20 @@ impl<'a> Session<'a> {
         match command.to_uppercase().as_str() {
             "COMMAND" => self.handle_command_command(args),
             "SELECT" => self.handle_select_command(args),
+            "GET" => {
+                let db = match self.selected_db.lock() {
+                    Ok(db) => db,
+                    Err(_) => return Value::err("Internal server error"),
+                };
+                db.handle_get_command(args)
+            }
+            "SET" => {
+                let mut db = match self.selected_db.lock() {
+                    Ok(db) => db,
+                    Err(_) => return Value::err("Internal server error"),
+                };
+                db.handle_set_command(args)
+            }
             cmd @ _ => Value::err(format!(
                 "unknown command `{}`, with args beginning with: {}",
                 cmd,
@@ -169,5 +183,47 @@ impl InternalDb {
         Self {
             storage: HashMap::new(),
         }
+    }
+
+    fn handle_get_command(&self, args: Vec<Value>) -> Value {
+        let mut args = args.into_iter();
+        let key = match args.next() {
+            Some(n) => n,
+            None => return Value::err("wrong number of arguments for 'get' command"),
+        };
+
+        let key = match key {
+            Value::Simple(s) | Value::Blob(s) => match s.into_string() {
+                Ok(s) => s,
+                _ => return Value::err("invalid key"),
+            },
+            _ => return Value::err("invalid key"),
+        };
+
+        self.storage.get(&key).unwrap_or(&Value::Null).clone()
+    }
+
+    fn handle_set_command(&mut self, args: Vec<Value>) -> Value {
+        let mut args = args.into_iter();
+        let key = match args.next() {
+            Some(n) => n,
+            None => return Value::err("wrong number of arguments for 'set' command"),
+        };
+
+        let key = match key {
+            Value::Simple(s) | Value::Blob(s) => match s.into_string() {
+                Ok(s) => s,
+                _ => return Value::err("invalid key"),
+            },
+            _ => return Value::err("invalid key"),
+        };
+
+        let value = match args.next() {
+            Some(s) => s,
+            None => return Value::err("wrong number of arguments for 'set' command"),
+        };
+
+        self.storage.insert(key, value);
+        Value::Simple("OK".into())
     }
 }

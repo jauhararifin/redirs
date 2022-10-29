@@ -7,7 +7,7 @@ use std::{
 
 use crate::error::Result;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Value {
     Simple(Bytes),
     Blob(Bytes),
@@ -30,7 +30,7 @@ impl Display for Value {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 pub struct Bytes(Vec<u8>);
 
 impl Bytes {

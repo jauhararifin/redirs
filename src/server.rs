@@ -1,6 +1,6 @@
 use crate::bufstream::BufStream;
 use crate::config::Config;
-use crate::db::{Database, Session};
+use crate::db::db::{Database, Session};
 use crate::error::Error;
 use crate::value::{ValueRead, ValueWrite};
 use log;
