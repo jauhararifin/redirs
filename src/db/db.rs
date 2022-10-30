@@ -1,45 +1,69 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, RwLock},
 };
 
-use crate::{config::Config, value::Value};
+use crate::{config::Config, value::Bytes, value::Value};
+
+use super::command::{get_commands, CommandSpec};
 
 pub struct Database {
-    dbs: Vec<Arc<Mutex<InternalDb>>>,
+    dbs: Vec<Arc<RwLock<InternalDb>>>,
 }
 
 impl Database {
     pub fn new(config: &Config) -> Self {
-        let n = if config.databases == 0 {
-            16
-        } else {
-            config.databases
-        };
-
-        let dbs: Vec<Arc<Mutex<InternalDb>>> = (0..n)
-            .map(|_| Arc::new(Mutex::new(InternalDb::new())))
+        let n = config.databases.clamp(1, 16);
+        let dbs: Vec<Arc<RwLock<InternalDb>>> = (0..n)
+            .map(|_| Arc::new(RwLock::new(InternalDb::new())))
             .collect();
-
         Self { dbs }
     }
 
-    fn get(&self, index: i64) -> Option<Arc<Mutex<InternalDb>>> {
+    pub fn get(&self, index: i64) -> Option<Arc<RwLock<InternalDb>>> {
         Some(self.dbs.get(index as usize)?.clone())
     }
+}
 
-    pub fn create_session(&self) -> Session {
-        let selected_db = self.dbs.first().unwrap().clone();
-        Session {
-            db: self,
-            selected_db,
+pub struct InternalDb {
+    pub storage: HashMap<Bytes, Bytes>,
+}
+
+impl InternalDb {
+    fn new() -> Self {
+        Self {
+            storage: HashMap::new(),
         }
     }
 }
 
 pub struct Session<'a> {
-    db: &'a Database,
-    selected_db: Arc<Mutex<InternalDb>>,
+    pub handlers: HashMap<String, CommandSpec<'a>>,
+    pub db: &'a Database,
+    pub selected_db: Arc<RwLock<InternalDb>>,
+}
+
+pub struct SessionFactory {
+    database: Database,
+}
+
+impl SessionFactory {
+    pub fn new(database: Database) -> Self {
+        Self { database }
+    }
+
+    pub fn create_session(&self) -> Session {
+        let mut handlers = HashMap::new();
+        for command in get_commands() {
+            handlers.insert(command.name.clone().to_uppercase(), command);
+        }
+
+        Session {
+            db: &self.database,
+            selected_db: self.database.dbs.first().unwrap().clone(),
+            handlers,
+        }
+    }
 }
 
 impl<'a> Session<'a> {
@@ -70,160 +94,18 @@ impl<'a> Session<'a> {
 
         let args: Vec<Value> = request.collect();
 
-        match command.to_uppercase().as_str() {
-            "COMMAND" => self.handle_command_command(args),
-            "SELECT" => self.handle_select_command(args),
-            "GET" => {
-                let db = match self.selected_db.lock() {
-                    Ok(db) => db,
-                    Err(_) => return Value::err("Internal server error"),
-                };
-                db.handle_get_command(args)
+        let command = command.to_uppercase();
+        let handler = match self.handlers.get(&command) {
+            Some(v) => v,
+            None => {
+                return Value::err(format!(
+                    "unknown command `{}`, with args beginning with: {}",
+                    command,
+                    args.get(0).unwrap_or(&Value::Null)
+                ))
             }
-            "SET" => {
-                let mut db = match self.selected_db.lock() {
-                    Ok(db) => db,
-                    Err(_) => return Value::err("Internal server error"),
-                };
-                db.handle_set_command(args)
-            }
-            cmd @ _ => Value::err(format!(
-                "unknown command `{}`, with args beginning with: {}",
-                cmd,
-                args.get(0).unwrap_or(&Value::Null),
-            )),
-        }
-    }
-
-    fn handle_command_command(&mut self, _: Vec<Value>) -> Value {
-        Value::Array(vec![
-            Value::Array(vec![
-                Value::Simple("COMMAND".into()),
-                Value::Number(1),
-                Value::Array(vec![
-                    Value::Simple("readonly".into()),
-                    Value::Simple("random".into()),
-                ]),
-                Value::Number(1),
-                Value::Number(1),
-                Value::Number(1),
-            ]),
-            Value::Array(vec![
-                Value::Simple("GET".into()),
-                Value::Number(2),
-                Value::Array(vec![
-                    Value::Simple("readonly".into()),
-                    Value::Simple("random".into()),
-                ]),
-                Value::Number(1),
-                Value::Number(1),
-                Value::Number(1),
-            ]),
-            Value::Array(vec![
-                Value::Simple("SET".into()),
-                Value::Number(2),
-                Value::Array(vec![
-                    Value::Simple("write".into()),
-                    Value::Simple("string".into()),
-                    Value::Simple("slow".into()),
-                ]),
-                Value::Number(1),
-                Value::Number(1),
-                Value::Number(1),
-            ]),
-            Value::Array(vec![
-                Value::Simple("SELECT".into()),
-                Value::Number(2),
-                Value::Array(vec![
-                    Value::Simple("fast".into()),
-                    Value::Simple("connection".into()),
-                ]),
-                Value::Number(0),
-                Value::Number(0),
-                Value::Number(0),
-            ]),
-        ])
-    }
-
-    fn handle_select_command(&mut self, args: Vec<Value>) -> Value {
-        let mut args = args.into_iter();
-        let target_db = match args.next() {
-            Some(n) => n,
-            None => return Value::err("wrong number of arguments for 'select' command"),
         };
 
-        let target_db = match target_db {
-            Value::Number(n) => n,
-            Value::Simple(s) | Value::Blob(s) => match s.into_string() {
-                Ok(s) => match s.parse::<i64>() {
-                    Ok(n) => n,
-                    _ => return Value::err("invalid DB index"),
-                },
-                _ => return Value::err("invalid DB index"),
-            },
-            _ => return Value::err("invalid DB index"),
-        };
-
-        let selected_db = match self.db.get(target_db) {
-            Some(db) => db,
-            None => return Value::err("DB index is out of range"),
-        };
-        self.selected_db = selected_db;
-
-        Value::Simple("OK".into())
-    }
-}
-
-pub struct InternalDb {
-    storage: HashMap<String, Value>,
-}
-
-impl InternalDb {
-    fn new() -> Self {
-        Self {
-            storage: HashMap::new(),
-        }
-    }
-
-    fn handle_get_command(&self, args: Vec<Value>) -> Value {
-        let mut args = args.into_iter();
-        let key = match args.next() {
-            Some(n) => n,
-            None => return Value::err("wrong number of arguments for 'get' command"),
-        };
-
-        let key = match key {
-            Value::Simple(s) | Value::Blob(s) => match s.into_string() {
-                Ok(s) => s,
-                _ => return Value::err("invalid key"),
-            },
-            _ => return Value::err("invalid key"),
-        };
-
-        self.storage.get(&key).unwrap_or(&Value::Null).clone()
-    }
-
-    fn handle_set_command(&mut self, args: Vec<Value>) -> Value {
-        let mut args = args.into_iter();
-        let key = match args.next() {
-            Some(n) => n,
-            None => return Value::err("wrong number of arguments for 'set' command"),
-        };
-
-        let key = match key {
-            Value::Simple(s) | Value::Blob(s) => match s.into_string() {
-                Ok(s) => s,
-                _ => return Value::err("invalid key"),
-            },
-            _ => return Value::err("invalid key"),
-        };
-
-        let value = match args.next() {
-            Some(s) => s,
-            None => return Value::err("wrong number of arguments for 'set' command"),
-        };
-
-        self.storage.insert(key, value);
-        Value::Simple("OK".into())
+        (handler.handler)(self, args).unwrap_or_else(|s| Value::err(s))
     }
 }

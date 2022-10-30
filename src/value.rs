@@ -7,7 +7,7 @@ use std::{
 
 use crate::error::Result;
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum Value {
     Simple(Bytes),
     Blob(Bytes),
@@ -30,7 +30,7 @@ impl Display for Value {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct Bytes(Vec<u8>);
 
 impl Bytes {
@@ -135,10 +135,14 @@ pub trait ValueRead: io::BufRead {
             }
             '$' => {
                 let num = self.read_number()?;
-                let mut buff = vec![0u8; num as usize];
-                self.read_exact(&mut buff)?;
-                self.consume(2);
-                Value::Blob(Bytes(buff))
+                if num < 0 {
+                    Value::Null
+                } else {
+                    let mut buff = vec![0u8; num as usize];
+                    self.read_exact(&mut buff)?;
+                    self.consume(2);
+                    Value::Blob(Bytes(buff))
+                }
             }
             ':' => {
                 let num = self.read_number()?;

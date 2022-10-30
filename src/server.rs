@@ -1,6 +1,6 @@
 use crate::bufstream::BufStream;
 use crate::config::Config;
-use crate::db::db::{Database, Session};
+use crate::db::{Session, SessionFactory};
 use crate::error::Error;
 use crate::value::{ValueRead, ValueWrite};
 use log;
@@ -10,14 +10,14 @@ use std::thread;
 
 pub struct Server<'a> {
     addr: String,
-    database: &'a mut Database,
+    session_factory: &'a mut SessionFactory,
 }
 
 impl<'a> Server<'a> {
-    pub fn new(config: &Config, database: &'a mut Database) -> Self {
+    pub fn new(config: &Config, session_factory: &'a mut SessionFactory) -> Self {
         Self {
             addr: format!("{}:{}", config.host, config.port),
-            database,
+            session_factory,
         }
     }
 
@@ -35,7 +35,7 @@ impl<'a> Server<'a> {
                     }
                 };
 
-                let session = self.database.create_session();
+                let session = self.session_factory.create_session();
                 server_scope.spawn(move || {
                     Self::handle_connection(session, connection);
                 });
@@ -77,16 +77,13 @@ impl<'a> Server<'a> {
 
             let response = session.handle_request(val);
 
-            match stream.write_value(&response) {
-                Ok(_) => (),
-                Err(err) => {
-                    log::error!(
-                        "Error writing response to client{}: {}. Disconnecting",
-                        addr,
-                        err
-                    );
-                    break;
-                }
+            if let Err(err) = stream.write_value(&response) {
+                log::error!(
+                    "Error writing response to client{}: {}. Disconnecting",
+                    addr,
+                    err
+                );
+                break;
             }
         }
     }

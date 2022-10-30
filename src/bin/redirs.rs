@@ -1,4 +1,4 @@
-use redirs::{config::Config, server::Server, db::Database};
+use redirs::{config::Config, db::{Database, SessionFactory}, server::Server};
 use std::io;
 use stderrlog::{self, LogLevelNum};
 
@@ -14,7 +14,8 @@ fn main() -> io::Result<()> {
         databases: 16,
     };
 
-    let mut database = Database::new(&config);
-    let server = Server::new(&config, &mut database);
+    let database = Database::new(&config);
+    let mut session_factory = SessionFactory::new(database);
+    let server = Server::new(&config, &mut session_factory);
     server.run()
 }
